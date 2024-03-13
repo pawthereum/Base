@@ -11,6 +11,7 @@ import "@openzeppelin/contracts@5.0.2/access/Ownable.sol";
  * @notice Pawthereum is a fee-on-transfer ERC20 token that also supports the ERC20 Permit extension,
  * allowing for gasless transactions. It includes features for owner management, automated market maker (AMM) pair management,
  * fee exemption for specific addresses, and adjustable fees with an upper limit.
+ * @custom:security-contact contact@pawthereum.com
  */
 contract Pawthereum is ERC20, ERC20Permit, Ownable {
     bool public isInitialized;
