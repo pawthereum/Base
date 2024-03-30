@@ -3,6 +3,7 @@ pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts@5.0.2/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts@5.0.2/token/ERC20/extensions/ERC20Permit.sol";
+import "@openzeppelin/contracts@5.0.2/token/ERC20/extensions/ERC20Votes.sol";
 import "@openzeppelin/contracts@5.0.2/access/Ownable.sol";
 
 /**
@@ -13,25 +14,35 @@ import "@openzeppelin/contracts@5.0.2/access/Ownable.sol";
  * fee exemption for specific addresses, and adjustable fees with an upper limit.
  * @custom:security-contact contact@pawthereum.com
  */
-contract Pawthereum is ERC20, ERC20Permit, Ownable {
+contract Pawthereum is ERC20, ERC20Permit, ERC20Votes, Ownable {
     bool public isInitialized;
     mapping(address => bool) public automatedMarketMakerPairs;
     mapping(address => bool) public isFeeExempt;
     uint256 public constant MAX_FEE = 3 * 10**16; // 3%
     uint256 public fee = 3 * 10**16; // Initially set to 3%
     address public feeAddress;
+    address immutable public airdropAddress;
+
+    event FeeSet(uint256 newFee);
+    event FeeAddressSet(address newFeeAddress);
+    event AMMPairSet(address ammAddress, bool isAmm);
+    event FeeExemptionStatusSet(address account, bool isExempt);
+    event Withdraw(address withdrawTo, uint256 amount);
+    event WithdrawErc20(address token, address withdrawTo, uint256 amount);
+    event Initialized();
 
     /**
      * @dev Sets the initial owner and mints initial token supply to the deployer.
-     * @param initialOwner Address that will be granted the contract ownership and initial fee address.
+     * @param _airdropAddress The address to be used for airdrops.
      */
-    constructor(address initialOwner)
+    constructor(address _initialOwner, address _airdropAddress)
         ERC20("Pawthereum", "PAWTH")
         ERC20Permit("Pawthereum")
-        Ownable(initialOwner)
+        Ownable(_initialOwner)
     {
-        feeAddress = initialOwner;
-        _mint(msg.sender, 1000000000 * 10**decimals());
+        airdropAddress = _airdropAddress;
+        feeAddress = _initialOwner;
+        _mint(_initialOwner, 1000000000 * 10**decimals());
     }
 
     /**
@@ -41,8 +52,8 @@ contract Pawthereum is ERC20, ERC20Permit, Ownable {
      * @param to Address receiving the tokens.
      * @param amount Number of tokens to send.
      */
-    function _update(address from, address to, uint256 amount) internal override {
-        require(isInitialized || from == owner() || to == owner(), "Pawthereum: Contract not initialized");
+    function _update(address from, address to, uint256 amount) internal override(ERC20, ERC20Votes) {
+        require(isInitialized || isAirdrop(from, to), "Pawthereum: Contract not initialized");
         // Check if the transfer is from an AMM pair and if at least one of the parties is not fee exempt
         if (automatedMarketMakerPairs[from] && (!isFeeExempt[to] || !isFeeExempt[from])) {
             uint256 feeAmount = (amount * fee) / 1e18;
@@ -55,12 +66,36 @@ contract Pawthereum is ERC20, ERC20Permit, Ownable {
     }
 
     /**
+     * @dev Checks if an address is the owner or the airdrop address.
+     * @param from The address to check.
+     * @return Whether the address is the owner or the airdrop address.
+     */
+    function isAirdrop(address from, address to) public view returns (bool) {
+        return to == owner() || from == owner() || from == airdropAddress;
+    }
+
+    /**
+     * @dev Overrides the nonces function to return the nonces of an address.
+     * @param owner The address to check the nonces for.
+     * @return onces of the address.
+     */
+    function nonces(address owner)
+        public
+        view
+        override(ERC20Permit, Nonces)
+        returns (uint256)
+    {
+        return super.nonces(owner);
+    }
+
+    /**
      * @dev Allows the owner to adjust the fee rate within a preset maximum limit.
      * @param newFee The new fee percentage to be set.
      */
     function setFee(uint256 newFee) external onlyOwner {
         require(newFee <= MAX_FEE, "Pawthereum: fee too high");
         fee = newFee;
+        emit FeeSet(newFee);
     }
 
     /**
@@ -69,6 +104,7 @@ contract Pawthereum is ERC20, ERC20Permit, Ownable {
      */
     function setFeeAddress(address newFeeAddress) external onlyOwner {
         feeAddress = newFeeAddress;
+        emit FeeAddressSet(newFeeAddress);
     }
 
     /**
@@ -79,6 +115,7 @@ contract Pawthereum is ERC20, ERC20Permit, Ownable {
     function setAutomatedMarketMakerPair(address ammAddress, bool isAmm) external onlyOwner {
         require(ammAddress != address(0), "Pawthereum: Invalid AMM address");
         automatedMarketMakerPairs[ammAddress] = isAmm;
+        emit AMMPairSet(ammAddress, isAmm);
     }
 
     /**
@@ -88,6 +125,7 @@ contract Pawthereum is ERC20, ERC20Permit, Ownable {
      */
     function setFeeExemptionStatus(address account, bool isExempt) external onlyOwner {
         isFeeExempt[account] = isExempt;
+        emit FeeExemptionStatusSet(account, isExempt);
     }
 
     /**
@@ -102,6 +140,7 @@ contract Pawthereum is ERC20, ERC20Permit, Ownable {
     function withdraw(address _withdrawTo) external onlyOwner {
         (bool success, ) = payable(_withdrawTo).call{value: address(this).balance}("");
         require(success, "Transfer failed.");
+        emit Withdraw(_withdrawTo, address(this).balance);
     }
 
     /**
@@ -112,14 +151,16 @@ contract Pawthereum is ERC20, ERC20Permit, Ownable {
     function withdrawErc20(address _token, address _withdrawTo) external onlyOwner {
         uint256 balance = IERC20(_token).balanceOf(address(this));
         IERC20(_token).transfer(_withdrawTo, balance);
+        emit WithdrawErc20(_token, _withdrawTo, balance);
     }
 
     /**
-     * @dev Initializes the contract, allowing for fee enforcement and AMM pair functionality.
+     * @dev Initializes the contract, allowing for transfers.
      * Can only be called once by the owner.
      */
     function initialize() external onlyOwner {
         require(!isInitialized, "Pawthereum: already initialized");
         isInitialized = true;
+        emit Initialized();
     }
 }
