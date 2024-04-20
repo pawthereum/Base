@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import "@openzeppelin/contracts@5.0.2/token/ERC20/ERC20.sol";
-import "@openzeppelin/contracts@5.0.2/token/ERC20/extensions/ERC20Permit.sol";
-import "@openzeppelin/contracts@5.0.2/token/ERC20/extensions/ERC20Votes.sol";
-import "@openzeppelin/contracts@5.0.2/access/Ownable.sol";
+import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Permit.sol";
+import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Votes.sol";
+import "@openzeppelin/contracts/access/Ownable.sol";
 
 /**
  * @title Pawthereum
@@ -18,7 +18,7 @@ contract Pawthereum is ERC20, ERC20Permit, ERC20Votes, Ownable {
     bool public isInitialized;
     mapping(address => bool) public automatedMarketMakerPairs;
     mapping(address => bool) public isFeeExempt;
-    uint256 public constant MAX_FEE = 3 * 10**16; // 3%
+    uint256 public maxFee = 3 * 10**16; // 3%
     uint256 public fee = 3 * 10**16; // Initially set to 3%
     address public feeAddress;
     address immutable public airdropAddress;
@@ -93,7 +93,7 @@ contract Pawthereum is ERC20, ERC20Permit, ERC20Votes, Ownable {
      * @param newFee The new fee percentage to be set.
      */
     function setFee(uint256 newFee) external onlyOwner {
-        require(newFee <= MAX_FEE, "Pawthereum: fee too high");
+        require(newFee <= maxFee, "Pawthereum: fee too high");
         fee = newFee;
         emit FeeSet(newFee);
     }
@@ -152,6 +152,15 @@ contract Pawthereum is ERC20, ERC20Permit, ERC20Votes, Ownable {
         uint256 balance = IERC20(_token).balanceOf(address(this));
         IERC20(_token).transfer(_withdrawTo, balance);
         emit WithdrawErc20(_token, _withdrawTo, balance);
+    }
+
+    /**
+     * @dev Allows the owner to set the max fee. However, the new max fee must be lower than the current max fee.
+    * @param _maxFee The new max fee to be set.
+     */
+    function setMaxFee(uint256 _maxFee) external onlyOwner {
+        require(_maxFee < maxFee, "Pawthereum: new max fee must be lower than current max fee");
+        maxFee = _maxFee;
     }
 
     /**
