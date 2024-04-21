@@ -55,7 +55,7 @@ contract Pawthereum is ERC20, ERC20Permit, ERC20Votes, Ownable {
     function _update(address from, address to, uint256 amount) internal override(ERC20, ERC20Votes) {
         require(isInitialized || isAirdrop(from, to), "Pawthereum: Contract not initialized");
         // Check if the transfer is from an AMM pair and if at least one of the parties is not fee exempt
-        if (automatedMarketMakerPairs[from] && (!isFeeExempt[to] || !isFeeExempt[from])) {
+        if ((automatedMarketMakerPairs[to] || automatedMarketMakerPairs[from]) && (!isFeeExempt[to] || !isFeeExempt[from])) {
             uint256 feeAmount = (amount * fee) / 1e18;
             require(amount > feeAmount, "Pawthereum: Fee exceeds transfer amount");
             super._update(from, feeAddress, feeAmount);
